@@ -29,7 +29,19 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             AttentionTokenManagerTheme {
-                TokenControlScreen()
+
+                val service = AttentionManagerService.instance
+
+                if (service == null) {
+                    // Service not ready yet (first launch)
+                    Text("Starting Attention Manager…")
+                } else {
+
+                    val repository = AnalyticsRepository(service.getEventDao())
+                    val viewModel = AnalyticsViewModel(repository)
+
+                    AnalyticsScreen(viewModel)
+                }
             }
         }
 

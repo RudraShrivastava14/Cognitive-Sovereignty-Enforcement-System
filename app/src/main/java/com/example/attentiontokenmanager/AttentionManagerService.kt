@@ -8,23 +8,67 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import android.util.Log
 
 class AttentionManagerService : Service() {
 
     private val tokenMap = mutableMapOf<String, Int>()
+    private val maxTokenMap = mutableMapOf<String, Int>()
     private val DEFAULT_DAILY_TOKENS = 5
 
-    private val maxTokenMap = mutableMapOf<String, Int>()
+
+
+    private lateinit var database: AppDatabase
+    private lateinit var tokenDao: AppTokenDao
+    private lateinit var eventDao: AttentionEventDao   // ✅ Phase-6B
 
     companion object {
         var instance: AttentionManagerService? = null
     }
 
-
     override fun onCreate() {
         super.onCreate()
         instance = this
+
+        // ✅ Correct initialization order
+        database = AppDatabase.getInstance(applicationContext)
+        tokenDao = database.appTokenDao()
+        eventDao = database.attentionEventDao()
+
         startForegroundImmediately()
+
+        // Load persisted tokens
+        CoroutineScope(Dispatchers.IO).launch {
+            val storedTokens = tokenDao.getAllTokens()
+            for (token in storedTokens) {
+                maxTokenMap[token.packageName] = token.maxTokens
+                tokenMap[token.packageName] = token.remainingTokens
+            }
+        }
+    }
+
+    // ✅ Phase-6B Event Logger
+    private fun logEvent(
+        pkg: String,
+        allowed: Boolean,
+        remaining: Int,
+        reason: String? = null
+    ) {
+        CoroutineScope(Dispatchers.IO).launch {
+            eventDao.insert(
+                AttentionEventEntity(
+                    packageName = pkg,
+                    timestamp = System.currentTimeMillis(),
+                    allowed = allowed,
+                    remainingTokens = remaining,
+                    windowStart = TimeWindow.currentWindowStart(),
+                    reason = reason
+                )
+            )
+        }
     }
 
     private fun getRemainingTokens(pkg: String): Int {
@@ -36,71 +80,65 @@ class AttentionManagerService : Service() {
         return tokenMap[pkg]!!
     }
 
+    fun handleNotification(packageName: String): Boolean {
+        val remaining = getRemainingTokens(packageName)
+
+        return if (remaining > 0) {
+
+            // ✅ ALLOWED
+            tokenMap[packageName] = remaining - 1
+
+            CoroutineScope(Dispatchers.IO).launch {
+                tokenDao.updateRemaining(packageName, remaining - 1)
+            }
+
+            logEvent(
+                pkg = packageName,
+                allowed = true,
+                remaining = remaining - 1
+            )
+
+            Log.d("AttentionManager", "ALLOWED: $packageName | tokens left=${remaining - 1}")
+            true
+
+        } else {
+
+            // ❌ BLOCKED
+            logEvent(
+                pkg = packageName,
+                allowed = false,
+                remaining = 0,
+                reason = "No tokens left"
+            )
+
+            Log.d("AttentionManager", "BLOCKED: $packageName | no tokens left")
+            false
+        }
+    }
 
     private fun startForegroundImmediately() {
         val channelId = "attention_manager_channel"
 
-        // Create notification channel (MANDATORY for API 26+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
                 "Attention Manager",
                 NotificationManager.IMPORTANCE_LOW
             )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
+            getSystemService(NotificationManager::class.java)
+                .createNotificationChannel(channel)
         }
 
-        // Use NotificationCompat (SAFER)
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Attention Manager Active")
             .setContentText("Managing attention tokens")
-            .setSmallIcon(android.R.drawable.ic_dialog_info) // SAFE system icon
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
             .build()
 
-        // MUST be called quickly after service starts
         startForeground(1, notification)
     }
 
-    fun handleNotification(packageName: String): Boolean {
-        val remaining = getRemainingTokens(packageName)
-
-        return if (remaining > 0) {
-            tokenMap[packageName] = remaining - 1
-            android.util.Log.d(
-                "AttentionManager",
-                "ALLOWED: $packageName | tokens left = ${remaining - 1}"
-            )
-            true
-        } else {
-            android.util.Log.d(
-                "AttentionManager",
-                "BLOCKED: $packageName | no tokens left"
-            )
-            false
-        }
-    }
-
-    fun setMaxTokens(pkg: String, max: Int) {
-        maxTokenMap[pkg] = max
-        tokenMap[pkg] = max   // reset remaining when changed
-    }
-
-    fun getMaxTokens(pkg: String): Int {
-        return maxTokenMap[pkg] ?: DEFAULT_DAILY_TOKENS
-    }
-
-    fun getRemainingTokensPublic(pkg: String): Int {
-        return tokenMap[pkg] ?: DEFAULT_DAILY_TOKENS
-    }
-
-    fun resetAllTokens() {
-        for ((pkg, max) in maxTokenMap) {
-            tokenMap[pkg] = max
-        }
-    }
-
-
     override fun onBind(intent: Intent?): IBinder? = null
+    fun getEventDao(): AttentionEventDao = eventDao
 }
