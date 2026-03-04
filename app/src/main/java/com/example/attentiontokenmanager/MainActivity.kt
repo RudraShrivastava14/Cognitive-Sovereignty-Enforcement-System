@@ -1,49 +1,49 @@
 package com.example.attentiontokenmanager
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.example.attentiontokenmanager.ui.theme.AttentionTokenManagerTheme
-import android.content.Intent
 import com.example.attentiontokenmanager.uii.TokenControlScreen
 
-
-
-
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)   // ✅ MUST be first
+        super.onCreate(savedInstanceState) // ✅ MUST be first
 
         enableEdgeToEdge()
+
+        // 🔹 Runtime UI (WORKING)
         setContent {
             AttentionTokenManagerTheme {
                 TokenControlScreen()
             }
         }
 
+        // 🔹 Notification permission + service start (UNCHANGED)
+        checkNotificationPermissionAndStartService()
+    }
 
-        // Check notification permission
+    private fun checkNotificationPermissionAndStartService() {
         if (ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.POST_NOTIFICATIONS
             ) == PackageManager.PERMISSION_GRANTED
         ) {
-            // Permission already granted → start service
-            startForegroundService(Intent(this, AttentionManagerService::class.java))
+            startForegroundService(
+                Intent(this, AttentionManagerService::class.java)
+            )
         } else {
-            // Ask permission
             ActivityCompat.requestPermissions(
                 this,
                 arrayOf(Manifest.permission.POST_NOTIFICATIONS),
@@ -63,12 +63,16 @@ class MainActivity : ComponentActivity() {
             grantResults.isNotEmpty() &&
             grantResults[0] == PackageManager.PERMISSION_GRANTED
         ) {
-            // Permission just granted → now start service
-            startForegroundService(Intent(this, AttentionManagerService::class.java))
+            startForegroundService(
+                Intent(this, AttentionManagerService::class.java)
+            )
         }
     }
-
 }
+
+/* ===================================================== */
+/* ================= PREVIEW SECTION =================== */
+/* ===================================================== */
 
 @Composable
 fun Greeting(name: String, modifier: Modifier = Modifier) {
