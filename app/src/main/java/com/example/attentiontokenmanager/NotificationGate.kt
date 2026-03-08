@@ -7,18 +7,29 @@ import android.util.Log
 class NotificationGate : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+
         val pkg = sbn.packageName
 
+        Log.d("NotificationGate", "Notification received from $pkg")
+
+
         val manager = AttentionManagerService.instance
+
         if (manager != null) {
+
             val allowed = manager.handleNotification(pkg)
 
             if (!allowed) {
-                // Block the notification
+
+                Log.d("NotificationGate", "Blocking notification from $pkg")
+
                 cancelNotification(sbn.key)
             }
+
+        } else {
+
+            Log.d("NotificationGate", "Service instance is null")
+
         }
     }
-
-
 }

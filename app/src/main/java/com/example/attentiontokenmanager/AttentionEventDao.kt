@@ -3,6 +3,7 @@ package com.example.attentiontokenmanager
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import com.example.attentiontokenmanager.analytics.AppCount
 
 @Dao
 interface AttentionEventDao {
@@ -27,5 +28,5 @@ interface AttentionEventDao {
         GROUP BY packageName
         ORDER BY count DESC
     """)
-    suspend fun blockedPerApp(): List<com.example.attentiontokenmanager.analytics.AppCount>
+    suspend fun blockedPerApp(): List<AppCount>
 }

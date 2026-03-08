@@ -7,15 +7,16 @@ class AnalyticsRepository(
 ) {
 
     suspend fun loadSummary(): AnalyticsSummary {
+
         val total = attentionEventDao.totalEvents()
         val blocked = attentionEventDao.totalBlocked()
         val allowed = attentionEventDao.totalAllowed()
 
-        
-
-        val blockRate =
-            if (total == 0) 0f
-            else blocked.toFloat() / total.toFloat()
+        val blockRate = if (total == 0) {
+            0f
+        } else {
+            blocked.toFloat() / total.toFloat()
+        }
 
         return AnalyticsSummary(
             totalEvents = total,

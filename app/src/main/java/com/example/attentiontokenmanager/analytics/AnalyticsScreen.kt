@@ -6,9 +6,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -24,7 +22,6 @@ fun AnalyticsScreen(
     val summary by viewModel.summary.collectAsState()
     val blockedApps by viewModel.blockedByApp.collectAsState()
 
-    // Loading state
     if (summary == null) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -49,20 +46,15 @@ fun AnalyticsScreen(
             style = MaterialTheme.typography.headlineSmall
         )
 
-        // 1️⃣ Summary
         SummaryCard(data)
 
-        // 2️⃣ Pie chart
         Text("Allowed vs Blocked")
         AllowedBlockedPieChart(data)
 
-        // 3️⃣ Bar chart
         Text("Most Blocked Apps")
         BlockedAppsBarChart(blockedApps)
     }
 }
-
-/* ---------- Helper composables ---------- */
 
 @Composable
 private fun SummaryCard(summary: AnalyticsSummary) {
@@ -95,13 +87,14 @@ private fun AllowedBlockedPieChart(summary: AnalyticsSummary) {
             .fillMaxWidth()
             .height(200.dp)
     ) {
+
         val diameter = min(size.width, size.height)
+
         val topLeft = Offset(
             (size.width - diameter) / 2,
             (size.height - diameter) / 2
         )
 
-        // Allowed
         drawArc(
             color = Color(0xFF4CAF50),
             startAngle = 0f,
@@ -111,7 +104,6 @@ private fun AllowedBlockedPieChart(summary: AnalyticsSummary) {
             size = Size(diameter, diameter)
         )
 
-        // Blocked
         drawArc(
             color = Color(0xFFF44336),
             startAngle = allowedSweep,
@@ -134,12 +126,15 @@ private fun BlockedAppsBarChart(apps: List<AppCount>) {
     val max = apps.maxOf { it.count }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+
         apps.take(5).forEach { app ->
+
             Column {
+
                 Text("${app.packageName} (${app.count})")
 
                 LinearProgressIndicator(
-                    progress = app.count / max.toFloat(),
+                    progress = if (max == 0) 0f else app.count / max.toFloat(),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
