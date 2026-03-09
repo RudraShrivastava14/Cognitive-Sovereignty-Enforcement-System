@@ -1,69 +1,106 @@
 package com.example.attentiontokenmanager
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.ViewModelProvider
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.unit.dp
+import androidx.compose.material3.HorizontalDivider
+import com.example.attentiontokenmanager.analytics.AnalyticsRepository
+import com.example.attentiontokenmanager.analytics.AnalyticsScreen
+import com.example.attentiontokenmanager.analytics.AnalyticsViewModel
+import com.example.attentiontokenmanager.analytics.AnalyticsViewModelFactory
 import com.example.attentiontokenmanager.ui.theme.AttentionTokenManagerTheme
-import android.content.Intent
 import com.example.attentiontokenmanager.uii.TokenControlScreen
 
-
-
-
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)   // ✅ MUST be first
+        super.onCreate(savedInstanceState)
 
         enableEdgeToEdge()
+
+        // 🔹 Create database
+        val database = AppDatabase.getInstance(this)
+
+        // 🔹 Create repository
+        val repository = AnalyticsRepository(
+            database.attentionEventDao()
+        )
+
+        // 🔹 Create ViewModel
+        val factory = AnalyticsViewModelFactory(repository)
+
+        val viewModel: AnalyticsViewModel =
+            ViewModelProvider(this, factory)[AnalyticsViewModel::class.java]
+
+        // 🔹 UI
         setContent {
             AttentionTokenManagerTheme {
 
-                val service = AttentionManagerService.instance
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp)
+                ) {
 
-                if (service == null) {
-                    // Service not ready yet (first launch)
-                    Text("Starting Attention Manager…")
-                } else {
+                    // Token Control Section
+                    TokenControlScreen()
 
-                    val repository = AnalyticsRepository(service.getEventDao())
-                    val viewModel = AnalyticsViewModel(repository)
+                    HorizontalDivider()
 
+                    // Analytics Section
                     AnalyticsScreen(viewModel)
                 }
             }
         }
 
+        checkNotificationPermissionAndStartService()
+    }
 
-        // Check notification permission
-        if (ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
-        ) {
-            // Permission already granted → start service
-            startForegroundService(Intent(this, AttentionManagerService::class.java))
+    private fun checkNotificationPermissionAndStartService() {
+
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            ) {
+                startForegroundService(
+                    Intent(this, AttentionManagerService::class.java)
+                )
+            } else {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    1001
+                )
+            }
+
         } else {
-            // Ask permission
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                1001
+            // Android 12 and below don't need POST_NOTIFICATIONS permission
+            startForegroundService(
+                Intent(this, AttentionManagerService::class.java)
             )
         }
     }
-
+    @Suppress("DEPRECATION")
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -71,16 +108,29 @@ class MainActivity : ComponentActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
-        if (requestCode == 1001 &&
-            grantResults.isNotEmpty() &&
-            grantResults[0] == PackageManager.PERMISSION_GRANTED
-        ) {
-            // Permission just granted → now start service
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            ) {
+                startForegroundService(Intent(this, AttentionManagerService::class.java))
+            } else {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    1001
+                )
+            }
+        } else {
             startForegroundService(Intent(this, AttentionManagerService::class.java))
         }
     }
-
 }
+
+/* ===================================================== */
+/* ================= PREVIEW SECTION =================== */
+/* ===================================================== */
 
 @Composable
 fun Greeting(name: String, modifier: Modifier = Modifier) {

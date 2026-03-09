@@ -2,12 +2,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Foreground service permission -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
+
+    <!-- Required for posting notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-
+    <!-- DO NOT add BIND_NOTIFICATION_LISTENER_SERVICE as a uses-permission -->
+    <!-- It must ONLY be used inside the service declaration -->
 
     <application
         android:allowBackup="true"
@@ -18,21 +20,28 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.AttentionTokenManager">
+
+        <!-- Main UI Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.AttentionTokenManager">
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
         </activity>
+
+
+        <!-- Notification Listener -->
         <service
             android:name=".NotificationGate"
+            android:label="Attention Notification Gate"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
-            android:exported="false">
+            android:exported="true">
 
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
@@ -40,6 +49,8 @@
 
         </service>
 
+
+        <!-- Foreground Service -->
         <service
             android:name=".AttentionManagerService"
             android:exported="false"
