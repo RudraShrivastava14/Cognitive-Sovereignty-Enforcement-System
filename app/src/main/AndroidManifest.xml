@@ -2,14 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Foreground service permission -->
+    <!-- Foreground service permissions -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- Required for posting notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- DO NOT add BIND_NOTIFICATION_LISTENER_SERVICE as a uses-permission -->
-    <!-- It must ONLY be used inside the service declaration -->
 
     <application
         android:allowBackup="true"
@@ -35,7 +33,6 @@
 
         </activity>
 
-
         <!-- Notification Listener -->
         <service
             android:name=".NotificationGate"
@@ -49,12 +46,18 @@
 
         </service>
 
-
         <!-- Foreground Service -->
         <service
             android:name=".AttentionManagerService"
             android:exported="false"
-            android:foregroundServiceType="specialUse" />
+            android:foregroundServiceType="specialUse">
+
+            <!-- Required for specialUse type on Android 14+ -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Manages attention tokens and notification filtering" />
+
+        </service>
 
     </application>
 

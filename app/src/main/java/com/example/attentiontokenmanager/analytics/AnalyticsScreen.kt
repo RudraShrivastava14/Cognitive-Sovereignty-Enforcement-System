@@ -14,6 +14,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import kotlin.math.min
+import com.example.attentiontokenmanager.uii.TimelineChart
 
 @Composable
 fun AnalyticsScreen(
@@ -21,10 +22,13 @@ fun AnalyticsScreen(
 ) {
     val summary by viewModel.summary.collectAsState()
     val blockedApps by viewModel.blockedByApp.collectAsState()
+    val hourlyData by viewModel.eventsPerHour.collectAsState()
 
     if (summary == null) {
         Box(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(32.dp),
             contentAlignment = Alignment.Center
         ) {
             Text("Loading analytics…")
@@ -36,8 +40,8 @@ fun AnalyticsScreen(
 
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
+            .fillMaxWidth()
+            .padding(bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
 
@@ -48,17 +52,29 @@ fun AnalyticsScreen(
 
         SummaryCard(data)
 
-        Text("Allowed vs Blocked")
+        Text(
+            text = "Allowed vs Blocked",
+            style = MaterialTheme.typography.titleMedium
+        )
         AllowedBlockedPieChart(data)
 
-        Text("Most Blocked Apps")
+        Text(
+            text = "Activity Timeline (by hour)",
+            style = MaterialTheme.typography.titleMedium
+        )
+        TimelineChart(hourlyData)
+
+        Text(
+            text = "Most Blocked Apps",
+            style = MaterialTheme.typography.titleMedium
+        )
         BlockedAppsBarChart(blockedApps)
     }
 }
 
 @Composable
 private fun SummaryCard(summary: AnalyticsSummary) {
-    Card {
+    Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -87,9 +103,7 @@ private fun AllowedBlockedPieChart(summary: AnalyticsSummary) {
             .fillMaxWidth()
             .height(200.dp)
     ) {
-
         val diameter = min(size.width, size.height)
-
         val topLeft = Offset(
             (size.width - diameter) / 2,
             (size.height - diameter) / 2
@@ -130,11 +144,11 @@ private fun BlockedAppsBarChart(apps: List<AppCount>) {
         apps.take(5).forEach { app ->
 
             Column {
-
                 Text("${app.packageName} (${app.count})")
 
+                // Use lambda form — the float-param overload is deprecated in Material3
                 LinearProgressIndicator(
-                    progress = if (max == 0) 0f else app.count / max.toFloat(),
+                    progress = { if (max == 0) 0f else app.count / max.toFloat() },
                     modifier = Modifier.fillMaxWidth()
                 )
             }

@@ -24,6 +24,14 @@ class AnalyticsViewModel(
         _blockedByApp
 
 
+    // 🔥 NEW: Hourly events state
+    private val _eventsPerHour =
+        MutableStateFlow<List<Int>>(List(24) { 0 })
+
+    val eventsPerHour: StateFlow<List<Int>> =
+        _eventsPerHour
+
+
     init {
         loadAnalytics()
     }
@@ -41,8 +49,12 @@ class AnalyticsViewModel(
                 val blockedApps =
                     repository.loadBlockedByApp()
 
+                val hourlyData =
+                    repository.loadEventsPerHour()
+
                 _summary.value = summaryResult
                 _blockedByApp.value = blockedApps
+                _eventsPerHour.value = hourlyData
 
             } catch (e: Exception) {
 
@@ -55,6 +67,7 @@ class AnalyticsViewModel(
                 )
 
                 _blockedByApp.value = emptyList()
+                _eventsPerHour.value = List(24) { 0 }
             }
         }
     }

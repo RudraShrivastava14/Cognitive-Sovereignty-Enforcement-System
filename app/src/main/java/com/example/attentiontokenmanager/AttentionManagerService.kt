@@ -12,15 +12,11 @@ import kotlinx.coroutines.*
 
 class AttentionManagerService : Service() {
 
-    private val tokenMap = mutableMapOf<String, Int>()
-    private val maxTokenMap = mutableMapOf<String, Int>()
-
     private val DEFAULT_DAILY_TOKENS = 5
 
     private lateinit var database: AppDatabase
     private lateinit var eventDao: AttentionEventDao
-
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private lateinit var tokenDao: AppTokenDao
 
     companion object {
         var instance: AttentionManagerService? = null
@@ -31,9 +27,9 @@ class AttentionManagerService : Service() {
 
         instance = this
 
-        // Initialize Room database
         database = AppDatabase.getInstance(applicationContext)
         eventDao = database.attentionEventDao()
+        tokenDao = database.appTokenDao()
 
         startForegroundImmediately()
 
@@ -64,67 +60,102 @@ class AttentionManagerService : Service() {
         startForeground(1, notification)
     }
 
-    private fun getRemainingTokens(pkg: String): Int {
-        if (!tokenMap.containsKey(pkg)) {
-
-            val max = maxTokenMap[pkg] ?: DEFAULT_DAILY_TOKENS
-
-            maxTokenMap[pkg] = max
-            tokenMap[pkg] = max
-        }
-
-        return tokenMap[pkg]!!
-    }
-
     fun handleNotification(packageName: String): Boolean {
-
-        val remaining = getRemainingTokens(packageName)
-
-        val allowed = remaining > 0
-
-        if (allowed) {
-            tokenMap[packageName] = remaining - 1
-        }
-
-        val remainingAfter = tokenMap[packageName] ?: 0
-
-        android.util.Log.d(
-            "AttentionManager",
-            "Notification from $packageName allowed=$allowed remaining=$remainingAfter"
-        )
-
-        // Log analytics event
-        serviceScope.launch {
+        return runBlocking {
             try {
 
+                val currentWindow = TimeWindow.currentWindowStart()
+
+                var token = tokenDao.getToken(packageName)
+
+                // Create if not exists
+                if (token == null) {
+                    token = AppTokenEntity(
+                        packageName = packageName,
+                        maxTokens = DEFAULT_DAILY_TOKENS,
+                        remainingTokens = DEFAULT_DAILY_TOKENS,
+                        lastUpdated = currentWindow
+                    )
+                    tokenDao.upsertToken(token)
+                }
+
+                // 🔥 DAILY RESET LOGIC
+                if (token.lastUpdated != currentWindow) {
+                    token = token.copy(
+                        remainingTokens = token.maxTokens,
+                        lastUpdated = currentWindow
+                    )
+                    tokenDao.upsertToken(token)
+
+                    android.util.Log.d(
+                        "AttentionManager",
+                        "Tokens reset for $packageName"
+                    )
+                }
+
+                val remaining = token.remainingTokens
+                val allowed = remaining > 0
+                val remainingAfter = if (allowed) remaining - 1 else remaining
+
+                if (allowed) {
+                    tokenDao.updateRemaining(packageName, remainingAfter)
+                }
+
+                android.util.Log.d(
+                    "AttentionManager",
+                    "Notification from $packageName allowed=$allowed remaining=$remainingAfter"
+                )
+
+                // Log event
                 eventDao.insert(
                     AttentionEventEntity(
                         packageName = packageName,
                         timestamp = System.currentTimeMillis(),
                         allowed = allowed,
                         remainingTokens = remainingAfter,
-                        windowStart = 0L,
+                        windowStart = currentWindow,
                         reason = if (allowed) "allowed" else "tokens_exhausted"
                     )
                 )
+
+                allowed
 
             } catch (e: Exception) {
 
                 android.util.Log.e(
                     "AttentionManager",
-                    "Failed to log analytics event",
+                    "Error handling notification",
                     e
                 )
+
+                true
             }
         }
-
-        return allowed
     }
 
     fun setMaxTokens(pkg: String, max: Int) {
+        runBlocking {
+            val token = tokenDao.getToken(pkg)
 
-        maxTokenMap[pkg] = max
-        tokenMap[pkg] = max
+            if (token != null) {
+                tokenDao.upsertToken(
+                    token.copy(
+                        maxTokens = max,
+                        remainingTokens = max,
+                        lastUpdated = System.currentTimeMillis()
+                    )
+                )
+            } else {
+                tokenDao.upsertToken(
+                    AppTokenEntity(
+                        packageName = pkg,
+                        maxTokens = max,
+                        remainingTokens = max,
+                        lastUpdated = System.currentTimeMillis()
+                    )
+                )
+            }
+        }
 
         android.util.Log.d(
             "AttentionManager",
@@ -132,35 +163,36 @@ class AttentionManagerService : Service() {
         )
     }
 
+    // ✅ FIXED: Expose maxTokens to UI
     fun getMaxTokens(pkg: String): Int {
-        return maxTokenMap[pkg] ?: DEFAULT_DAILY_TOKENS
+        return runBlocking {
+            val token = tokenDao.getToken(pkg)
+            token?.maxTokens ?: DEFAULT_DAILY_TOKENS
+        }
     }
 
     fun getRemainingTokensPublic(pkg: String): Int {
-        return tokenMap[pkg] ?: DEFAULT_DAILY_TOKENS
+        return runBlocking {
+            val token = tokenDao.getToken(pkg)
+            token?.remainingTokens ?: DEFAULT_DAILY_TOKENS
+        }
     }
 
     fun resetAllTokens() {
+        runBlocking {
+            val allTokens = tokenDao.getAllTokens()
 
-        for ((pkg, max) in maxTokenMap) {
-            tokenMap[pkg] = max
+            allTokens.forEach { token ->
+                tokenDao.updateRemaining(token.packageName, token.maxTokens)
+            }
         }
 
-        android.util.Log.d(
-            "AttentionManager",
-            "All tokens reset"
-        )
+        android.util.Log.d("AttentionManager", "All tokens reset")
     }
 
     override fun onDestroy() {
         super.onDestroy()
-
-        serviceScope.cancel()
-
-        android.util.Log.d(
-            "AttentionManager",
-            "Service destroyed"
-        )
+        android.util.Log.d("AttentionManager", "Service destroyed")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

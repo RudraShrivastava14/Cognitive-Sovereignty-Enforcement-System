@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
 import com.example.attentiontokenmanager.analytics.AppCount
+import com.example.attentiontokenmanager.analytics.HourCount
 
 @Dao
 interface AttentionEventDao {
@@ -29,4 +30,14 @@ interface AttentionEventDao {
         ORDER BY count DESC
     """)
     suspend fun blockedPerApp(): List<AppCount>
+
+    // 🔥 NEW: Hourly analytics
+    @Query("""
+        SELECT strftime('%H', timestamp / 1000, 'unixepoch') AS hour,
+               COUNT(*) AS count
+        FROM attention_events
+        GROUP BY hour
+        ORDER BY hour
+    """)
+    suspend fun eventsPerHourRaw(): List<HourCount>
 }

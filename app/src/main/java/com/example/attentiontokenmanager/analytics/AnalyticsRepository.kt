@@ -29,4 +29,22 @@ class AnalyticsRepository(
     suspend fun loadBlockedByApp(): List<AppCount> {
         return attentionEventDao.blockedPerApp()
     }
+
+    // 🔥 NEW: Hourly data for TimelineChart
+    suspend fun loadEventsPerHour(): List<Int> {
+
+        val raw = attentionEventDao.eventsPerHourRaw()
+
+        // Create 24-hour list initialized with 0
+        val result = MutableList(24) { 0 }
+
+        raw.forEach {
+            val hourIndex = it.hour.toIntOrNull() ?: 0
+            if (hourIndex in 0..23) {
+                result[hourIndex] = it.count
+            }
+        }
+
+        return result
+    }
 }
