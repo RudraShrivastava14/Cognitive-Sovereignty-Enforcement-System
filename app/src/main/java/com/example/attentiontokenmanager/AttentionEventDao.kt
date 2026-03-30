@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import com.example.attentiontokenmanager.analytics.AppCount
 import com.example.attentiontokenmanager.analytics.HourCount
+import com.example.attentiontokenmanager.analytics.AppBlockStats
 
 @Dao
 interface AttentionEventDao {
@@ -40,4 +41,31 @@ interface AttentionEventDao {
         ORDER BY hour
     """)
     suspend fun eventsPerHourRaw(): List<HourCount>
+
+    // Phase 7: AI Learning Analytics
+    @Query("""
+        SELECT COUNT(*) as totalEvents, 
+               COALESCE(SUM(CASE WHEN allowed = 0 THEN 1 ELSE 0 END), 0) as blockedEvents
+        FROM attention_events 
+        WHERE packageName = :pkg AND timestamp >= :sinceTimestamp
+    """)
+    suspend fun getAppStatsSince(pkg: String, sinceTimestamp: Long): AppBlockStats
+
+    @Query("""
+        SELECT packageName AS packageName,
+               COUNT(*) AS count
+        FROM attention_events
+        WHERE allowed = 0
+          AND timestamp >= :startOfDay
+          AND timestamp <= :endOfDay
+        GROUP BY packageName
+        ORDER BY count DESC
+    """)
+    suspend fun getBlockedAppsForDate(startOfDay: Long, endOfDay: Long): List<AppCount>
+
+    @Query("DELETE FROM attention_events")
+    suspend fun clearAllEvents()
+
+    @Query("SELECT * FROM attention_events ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun getRecentEvents(limit: Int): List<AttentionEventEntity>
 }

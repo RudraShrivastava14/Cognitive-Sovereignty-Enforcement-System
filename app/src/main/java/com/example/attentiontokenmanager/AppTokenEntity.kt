@@ -13,5 +13,14 @@ data class AppTokenEntity(
 
     val remainingTokens: Int,
 
-    val lastUpdated: Long
+    val lastUpdated: Long,
+
+    // Phase 7: Smart Rules & AI
+    val allowedStartHour: Int? = null,
+
+    val allowedEndHour: Int? = null,
+
+    val isAdaptiveLearningEnabled: Boolean = true,
+
+    val dailyAdjustmentLog: String? = null
 )

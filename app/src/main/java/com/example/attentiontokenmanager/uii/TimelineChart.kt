@@ -24,7 +24,7 @@ fun TimelineChart(eventsPerHour: List<Int>) {
             val barHeight = (count.toFloat() / max) * size.height
 
             drawRect(
-                color = Color(0xFF2196F3),
+                color = Color(0xFF6EE7B7),
                 topLeft = androidx.compose.ui.geometry.Offset(
                     x = index * barWidth,
                     y = size.height - barHeight

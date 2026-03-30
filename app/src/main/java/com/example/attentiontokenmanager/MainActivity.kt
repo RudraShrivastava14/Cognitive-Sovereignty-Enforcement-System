@@ -9,12 +9,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Scaffold
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.vectorResource
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
@@ -23,6 +26,8 @@ import java.util.concurrent.TimeUnit
 import com.example.attentiontokenmanager.analytics.*
 import com.example.attentiontokenmanager.ui.theme.AttentionTokenManagerTheme
 import com.example.attentiontokenmanager.uii.TokenControlScreen
+import com.example.attentiontokenmanager.uii.DashboardScreen
+import com.example.attentiontokenmanager.uii.CalendarScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -39,21 +44,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             AttentionTokenManagerTheme {
-                // Scaffold handles edge-to-edge insets correctly
-                Scaffold { innerPadding ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
-                            .padding(innerPadding)
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(24.dp)
-                    ) {
-                        TokenControlScreen()
-                        HorizontalDivider()
-                        AnalyticsScreen(viewModel)
-                    }
-                }
+                ObsidianLabApp(viewModel, database)
             }
         }
 
@@ -114,6 +105,64 @@ class MainActivity : ComponentActivity() {
             grantResults[0] == PackageManager.PERMISSION_GRANTED
         ) {
             startAttentionService()
+        }
+    }
+}
+
+enum class ObsidianTab(val label: String, val icon: ImageVector) {
+    DASHBOARD("Dashboard", Icons.Filled.Home),
+    CONTROL("Control", Icons.Filled.Settings),
+    ANALYTICS("Analytics", Icons.Filled.Home),  // placeholder, replaced in composable
+    CALENDAR("Calendar", Icons.Filled.DateRange)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ObsidianLabApp(viewModel: AnalyticsViewModel, database: AppDatabase) {
+    var selectedTab by remember { mutableStateOf(ObsidianTab.DASHBOARD) }
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        bottomBar = {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface
+            ) {
+                ObsidianTab.entries.forEach { tab ->
+                    NavigationBarItem(
+                        selected = selectedTab == tab,
+                        onClick = { selectedTab = tab },
+                        label = {
+                            Text(
+                                text = tab.label.uppercase(),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        },
+                        icon = {
+                            Icon(
+                                imageVector = tab.icon,
+                                contentDescription = tab.label
+                            )
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            indicatorColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    )
+                }
+            }
+        }
+    ) { innerPadding ->
+        Box(modifier = Modifier.padding(innerPadding)) {
+            when (selectedTab) {
+                ObsidianTab.DASHBOARD -> DashboardScreen(database = database)
+                ObsidianTab.CONTROL -> TokenControlScreen(database = database)
+                ObsidianTab.ANALYTICS -> AnalyticsScreen(viewModel)
+                ObsidianTab.CALENDAR -> CalendarScreen(database = database)
+            }
         }
     }
 }

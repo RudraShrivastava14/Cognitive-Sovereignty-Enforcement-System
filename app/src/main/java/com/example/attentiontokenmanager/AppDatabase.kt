@@ -8,9 +8,10 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [
         AppTokenEntity::class,
-        AttentionEventEntity::class
+        AttentionEventEntity::class,
+        CalendarEventEntity::class
     ],
-    version = 2,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -18,6 +19,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appTokenDao(): AppTokenDao
 
     abstract fun attentionEventDao(): AttentionEventDao
+
+    abstract fun calendarEventDao(): CalendarEventDao
 
     companion object {
 
