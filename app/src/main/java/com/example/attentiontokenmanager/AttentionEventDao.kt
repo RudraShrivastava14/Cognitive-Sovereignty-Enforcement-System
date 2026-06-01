@@ -32,7 +32,6 @@ interface AttentionEventDao {
     """)
     suspend fun blockedPerApp(): List<AppCount>
 
-    // 🔥 NEW: Hourly analytics
     @Query("""
         SELECT strftime('%H', timestamp / 1000, 'unixepoch') AS hour,
                COUNT(*) AS count
@@ -68,4 +67,32 @@ interface AttentionEventDao {
 
     @Query("SELECT * FROM attention_events ORDER BY timestamp DESC LIMIT :limit")
     suspend fun getRecentEvents(limit: Int): List<AttentionEventEntity>
+
+    // ── Phase 8 Insight Queries ───────────────────────────────────────────
+
+    // Count time-restricted blocks in a time range (for focus_violation insight)
+    @Query("""
+        SELECT COUNT(*) FROM attention_events 
+        WHERE reason = 'time_restricted' 
+        AND timestamp >= :since 
+        AND timestamp < :until
+    """)
+    suspend fun timeRestrictedCount(since: Long, until: Long): Int
+
+    // Count blocked events in a time range (for daily_trend insight)
+    @Query("""
+        SELECT COUNT(*) FROM attention_events 
+        WHERE allowed = 0 
+        AND timestamp >= :since 
+        AND timestamp < :until
+    """)
+    suspend fun blockedBetween(since: Long, until: Long): Int
+
+    // Count total events in a time range (for streak insight)
+    @Query("""
+        SELECT COUNT(*) FROM attention_events 
+        WHERE timestamp >= :since 
+        AND timestamp < :until
+    """)
+    suspend fun totalEventsBetween(since: Long, until: Long): Int
 }

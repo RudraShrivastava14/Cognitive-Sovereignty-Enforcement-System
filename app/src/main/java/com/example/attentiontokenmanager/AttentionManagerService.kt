@@ -24,14 +24,13 @@ class AttentionManagerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-
         instance = this
 
         database = AppDatabase.getInstance(applicationContext)
         eventDao = database.attentionEventDao()
         tokenDao = database.appTokenDao()
 
-        // Seed default tracked apps (3 only) if DB is empty
+        // Seed default tracked apps if DB is empty
         runBlocking {
             val existing = tokenDao.getAllTokens()
             if (existing.isEmpty()) {
@@ -55,7 +54,6 @@ class AttentionManagerService : Service() {
         }
 
         startForegroundImmediately()
-
         android.util.Log.d("AttentionManager", "Service created")
     }
 
@@ -72,7 +70,6 @@ class AttentionManagerService : Service() {
                 "Attention Manager",
                 NotificationManager.IMPORTANCE_LOW
             )
-
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
         }
@@ -90,49 +87,45 @@ class AttentionManagerService : Service() {
     fun handleNotification(packageName: String): Boolean {
         return runBlocking {
             try {
-
                 val currentWindow = TimeWindow.currentWindowStart()
-
                 var token = tokenDao.getToken(packageName)
 
-                // Only manage apps explicitly tracked
-                if (token == null) {
-                    return@runBlocking true
-                }
+                // Only manage explicitly tracked apps
+                if (token == null) return@runBlocking true
 
-                // 🔥 DAILY RESET LOGIC
+                // Daily reset logic
                 if (token.lastUpdated != currentWindow) {
                     token = token.copy(
                         remainingTokens = token.maxTokens,
                         lastUpdated = currentWindow
                     )
                     tokenDao.upsertToken(token)
-
-                    android.util.Log.d(
-                        "AttentionManager",
-                        "Tokens reset for $packageName"
-                    )
+                    android.util.Log.d("AttentionManager", "Tokens reset for $packageName")
                 }
 
-                // 🔥 TIME-BASED RESTRICTIONS (Phase 7 Part 2)
-                val currentHour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+                // Time-based restrictions
+                val currentHour = java.util.Calendar.getInstance()
+                    .get(java.util.Calendar.HOUR_OF_DAY)
                 val hasStartLimit = token.allowedStartHour != null
                 val hasEndLimit = token.allowedEndHour != null
-                
+
                 var isTimeRestricted = false
-                if (hasStartLimit && hasEndLimit && token.allowedStartHour != token.allowedEndHour) {
+                if (hasStartLimit && hasEndLimit &&
+                    token.allowedStartHour != token.allowedEndHour) {
                     if (token.allowedStartHour!! <= token.allowedEndHour!!) {
-                        // Standard window (e.g., 9 to 17)
-                        isTimeRestricted = currentHour < token.allowedStartHour!! || currentHour >= token.allowedEndHour!!
+                        isTimeRestricted = currentHour < token.allowedStartHour!! ||
+                                currentHour >= token.allowedEndHour!!
                     } else {
-                        // Overnight window (e.g., 22 to 6)
-                        isTimeRestricted = currentHour >= token.allowedEndHour!! && currentHour < token.allowedStartHour!!
+                        isTimeRestricted = currentHour >= token.allowedEndHour!! &&
+                                currentHour < token.allowedStartHour!!
                     }
                 }
 
                 if (isTimeRestricted) {
-                    android.util.Log.d("AttentionManager", "Notification from $packageName blocked (time_restricted)")
-                    
+                    android.util.Log.d(
+                        "AttentionManager",
+                        "Notification from $packageName blocked (time_restricted)"
+                    )
                     eventDao.insert(
                         AttentionEventEntity(
                             packageName = packageName,
@@ -150,16 +143,13 @@ class AttentionManagerService : Service() {
                 val allowed = remaining > 0
                 val remainingAfter = if (allowed) remaining - 1 else remaining
 
-                if (allowed) {
-                    tokenDao.updateRemaining(packageName, remainingAfter)
-                }
+                if (allowed) tokenDao.updateRemaining(packageName, remainingAfter)
 
                 android.util.Log.d(
                     "AttentionManager",
                     "Notification from $packageName allowed=$allowed remaining=$remainingAfter"
                 )
 
-                // Log event
                 eventDao.insert(
                     AttentionEventEntity(
                         packageName = packageName,
@@ -174,13 +164,7 @@ class AttentionManagerService : Service() {
                 allowed
 
             } catch (e: Exception) {
-
-                android.util.Log.e(
-                    "AttentionManager",
-                    "Error handling notification",
-                    e
-                )
-
+                android.util.Log.e("AttentionManager", "Error handling notification", e)
                 true
             }
         }
@@ -189,31 +173,28 @@ class AttentionManagerService : Service() {
     fun setMaxTokens(pkg: String, max: Int) {
         runBlocking {
             val token = tokenDao.getToken(pkg)
-
             if (token != null) {
                 tokenDao.upsertToken(
                     token.copy(
                         maxTokens = max,
                         remainingTokens = max,
-                        lastUpdated = token.lastUpdated
+                        lastUpdated = token.lastUpdated  // preserve existing window
                     )
                 )
             } else {
+                // ✅ FIX 3: New tokens use midnight timestamp so daily reset
+                // logic doesn't fire on every single notification after re-add
                 tokenDao.upsertToken(
                     AppTokenEntity(
                         packageName = pkg,
                         maxTokens = max,
                         remainingTokens = max,
-                        lastUpdated = System.currentTimeMillis()
+                        lastUpdated = TimeWindow.currentWindowStart()
                     )
                 )
             }
         }
-
-        android.util.Log.d(
-            "AttentionManager",
-            "Max tokens updated for $pkg = $max"
-        )
+        android.util.Log.d("AttentionManager", "Max tokens updated for $pkg = $max")
     }
 
     fun deleteTokenConfig(pkg: String) {
@@ -225,7 +206,6 @@ class AttentionManagerService : Service() {
         }
     }
 
-    // ✅ FIXED: Expose maxTokens to UI
     fun getMaxTokens(pkg: String): Int {
         return runBlocking {
             val token = tokenDao.getToken(pkg)
@@ -240,7 +220,6 @@ class AttentionManagerService : Service() {
         }
     }
 
-    // Phase 7: UI Getters/Setters
     fun getTokenConfig(pkg: String): AppTokenEntity? {
         return runBlocking {
             tokenDao.getToken(pkg)
@@ -276,12 +255,10 @@ class AttentionManagerService : Service() {
     fun resetAllTokens() {
         runBlocking {
             val allTokens = tokenDao.getAllTokens()
-
             allTokens.forEach { token ->
                 tokenDao.updateRemaining(token.packageName, token.maxTokens)
             }
         }
-
         android.util.Log.d("AttentionManager", "All tokens reset")
     }
 

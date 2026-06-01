@@ -25,7 +25,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.attentiontokenmanager.AppDatabase
+import com.example.attentiontokenmanager.AttentionEventEntity
 import com.example.attentiontokenmanager.AttentionManagerService
+import com.example.attentiontokenmanager.TimeWindow
+import com.example.attentiontokenmanager.analytics.InsightEntity
 import kotlinx.coroutines.launch
 
 fun getAppName(pm: PackageManager, packageName: String): String {
@@ -38,17 +41,21 @@ fun getAppName(pm: PackageManager, packageName: String): String {
 }
 
 @Composable
-fun DashboardScreen(database: AppDatabase, onRefresh: () -> Unit = {}) {
+fun DashboardScreen(database: AppDatabase) {
 
     val manager = AttentionManagerService.instance
     val context = LocalContext.current
     val pm = context.packageManager
+    val coroutineScope = rememberCoroutineScope()
 
-    // Auto-updating list directly from the local DB!
+    // ── REFRESH TRIGGER — incrementing this reloads all non-flow data ──
+    var refreshTrigger by remember { mutableStateOf(0) }
+
+    // Live token flow — already reactive, no trigger needed
     val appsFlow = remember(database) { database.appTokenDao().getAllTokensFlow() }
     val apps by appsFlow.collectAsState(initial = emptyList())
 
-    // Calculate cognitive capacity dynamically 
+    // Cognitive capacity
     var totalRemaining = 0
     var totalMax = 0
     apps.forEach { app ->
@@ -57,13 +64,27 @@ fun DashboardScreen(database: AppDatabase, onRefresh: () -> Unit = {}) {
     }
     val capacityPercent = if (totalMax > 0) (totalRemaining * 100) / totalMax else 100
 
+    // Recent events — reloads on refreshTrigger
+    var recentEvents by remember { mutableStateOf(emptyList<AttentionEventEntity>()) }
+    LaunchedEffect(refreshTrigger) {
+        recentEvents = database.attentionEventDao().getRecentEvents(10)
+    }
+
+    // Insights — reloads on refreshTrigger
+    var insights by remember { mutableStateOf(emptyList<InsightEntity>()) }
+    LaunchedEffect(refreshTrigger) {
+        val fiveDaysAgo = TimeWindow.currentWindowStart() - (5L * 24 * 60 * 60 * 1000)
+        insights = database.insightDao().getInsightsSince(fiveDaysAgo)
+    }
+
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
         ) {
-            // ── Top Bar ──
+
+            // ── Top Bar ──────────────────────────────────────────────────
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -83,7 +104,11 @@ fun DashboardScreen(database: AppDatabase, onRefresh: () -> Unit = {}) {
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.weight(1f))
-                IconButton(onClick = { onRefresh() }, modifier = Modifier.size(20.dp)) {
+                // ✅ FIX 1: Refresh button now increments refreshTrigger
+                IconButton(
+                    onClick = { refreshTrigger++ },
+                    modifier = Modifier.size(20.dp)
+                ) {
                     Icon(
                         Icons.Filled.Refresh,
                         contentDescription = "Refresh",
@@ -95,7 +120,7 @@ fun DashboardScreen(database: AppDatabase, onRefresh: () -> Unit = {}) {
 
             Column(modifier = Modifier.padding(horizontal = 20.dp)) {
 
-                // ── Cognitive Capacity ──
+                // ── Cognitive Capacity ───────────────────────────────────
                 Text(
                     "COGNITIVE CAPACITY",
                     style = MaterialTheme.typography.labelSmall,
@@ -122,7 +147,7 @@ fun DashboardScreen(database: AppDatabase, onRefresh: () -> Unit = {}) {
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // ── Live Status Chip ──
+                // ── Live Status Chip ─────────────────────────────────────
                 Surface(
                     shape = RoundedCornerShape(50.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant,
@@ -149,7 +174,7 @@ fun DashboardScreen(database: AppDatabase, onRefresh: () -> Unit = {}) {
 
                 Spacer(modifier = Modifier.height(28.dp))
 
-                // ── Active Tokens Header ──
+                // ── Active Tokens ────────────────────────────────────────
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -163,16 +188,19 @@ fun DashboardScreen(database: AppDatabase, onRefresh: () -> Unit = {}) {
                     Text(
                         "GOTO CONTROL →",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 if (apps.isEmpty()) {
-                    Text("No apps configured. Go to Control to track applications.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "No apps configured. Go to Control to track applications.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 } else {
-                    // Render app cards dynamically in pairs
                     val chunkedApps = apps.chunked(2)
                     chunkedApps.forEach { rowApps ->
                         Row(
@@ -194,9 +222,15 @@ fun DashboardScreen(database: AppDatabase, onRefresh: () -> Unit = {}) {
                                         modifier = Modifier.padding(16.dp),
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
-                                        // Circular progress ring
-                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(64.dp)) {
-                                            val ringColor = if (pct > 0.3f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier.size(64.dp)
+                                        ) {
+                                            val ringColor = when {
+                                                pct > 0.6f -> MaterialTheme.colorScheme.primary
+                                                pct > 0.3f -> Color(0xFFFBBF24)
+                                                else -> MaterialTheme.colorScheme.error
+                                            }
                                             Canvas(modifier = Modifier.size(64.dp)) {
                                                 drawArc(
                                                     color = Color(0xFF1C1C28),
@@ -205,7 +239,13 @@ fun DashboardScreen(database: AppDatabase, onRefresh: () -> Unit = {}) {
                                                     useCenter = false,
                                                     style = Stroke(width = 6f, cap = StrokeCap.Round)
                                                 )
-                                                drawArc(color = ringColor, startAngle = -90f, sweepAngle = 360f * pct, useCenter = false, style = Stroke(width = 6f, cap = StrokeCap.Round))
+                                                drawArc(
+                                                    color = ringColor,
+                                                    startAngle = -90f,
+                                                    sweepAngle = 360f * pct,
+                                                    useCenter = false,
+                                                    style = Stroke(width = 6f, cap = StrokeCap.Round)
+                                                )
                                             }
                                             Text(
                                                 "${(pct * 100).toInt()}%",
@@ -229,10 +269,7 @@ fun DashboardScreen(database: AppDatabase, onRefresh: () -> Unit = {}) {
                                     }
                                 }
                             }
-                            if (rowApps.size == 1) {
-                                // Add empty weight for alignment
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
+                            if (rowApps.size == 1) Spacer(modifier = Modifier.weight(1f))
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                     }
@@ -240,17 +277,13 @@ fun DashboardScreen(database: AppDatabase, onRefresh: () -> Unit = {}) {
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // ── Recent Activity (LIVE from DB) ──
+                // ── Recent Activity ──────────────────────────────────────
                 Text(
                     "RECENT ACTIVITY",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-
-                val recentEvents by produceState(initialValue = emptyList<com.example.attentiontokenmanager.AttentionEventEntity>()) {
-                    value = database.attentionEventDao().getRecentEvents(10)
-                }
 
                 Surface(
                     shape = RoundedCornerShape(16.dp),
@@ -259,26 +292,54 @@ fun DashboardScreen(database: AppDatabase, onRefresh: () -> Unit = {}) {
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         if (recentEvents.isEmpty()) {
-                            Text("No activity yet. Notifications will appear here as they are processed.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                "No activity yet. Notifications will appear here as they are processed.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         } else {
                             recentEvents.forEach { event ->
                                 val appName = getAppName(pm, event.packageName)
-                                val wasBlocked = !event.allowed
-                                val dotColor = if (wasBlocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                                val label = if (wasBlocked) "BLOCKED" else "ALLOWED"
-                                val timeStr = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(event.timestamp))
+                                val dotColor = when (event.reason) {
+                                    "time_restricted" -> Color(0xFFFBBF24)
+                                    "allowed" -> MaterialTheme.colorScheme.primary
+                                    else -> MaterialTheme.colorScheme.error
+                                }
+                                val label = when (event.reason) {
+                                    "time_restricted" -> "TIME RESTRICTED"
+                                    "allowed" -> "ALLOWED"
+                                    else -> "BLOCKED"
+                                }
+                                val timeStr = java.text.SimpleDateFormat(
+                                    "HH:mm",
+                                    java.util.Locale.getDefault()
+                                ).format(java.util.Date(event.timestamp))
 
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Box(
-                                        modifier = Modifier.size(6.dp).clip(CircleShape).background(dotColor)
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(dotColor)
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(appName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground)
-                                        Text("$label • $timeStr", style = MaterialTheme.typography.labelSmall, color = dotColor, fontSize = 8.sp)
+                                        Text(
+                                            appName,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onBackground
+                                        )
+                                        Text(
+                                            "$label • $timeStr",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = dotColor,
+                                            fontSize = 8.sp
+                                        )
                                     }
                                     Text(
                                         "${event.remainingTokens} left",
@@ -294,12 +355,53 @@ fun DashboardScreen(database: AppDatabase, onRefresh: () -> Unit = {}) {
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // ── Reset All Tokens Button ──
+                // ── TODAY'S INSIGHTS ─────────────────────────────────────
+                Text(
+                    "TODAY'S INSIGHTS",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (insights.isEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                "Insights are generated at midnight based on your day's activity.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Check back tomorrow morning for your first report.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else {
+                    insights.forEach { insight ->
+                        InsightCard(insight = insight)
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // ── Reset All Tokens Button ──────────────────────────────
+                // ✅ FIX 2: Reset now also increments refreshTrigger so UI updates
                 Button(
                     onClick = {
                         manager?.resetAllTokens()
+                        refreshTrigger++
                     },
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
                     shape = RoundedCornerShape(50.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF7F1D1D),
@@ -311,23 +413,82 @@ fun DashboardScreen(database: AppDatabase, onRefresh: () -> Unit = {}) {
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // ── Clear Stale Data Button ──
-                val coroutineScope = rememberCoroutineScope()
+                // ── Clear Activity Logs Button ───────────────────────────
                 OutlinedButton(
                     onClick = {
                         coroutineScope.launch {
                             database.attentionEventDao().clearAllEvents()
+                            refreshTrigger++ // reload after clear
                         }
                     },
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
                     shape = RoundedCornerShape(50.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.error
+                    )
                 ) {
                     Text("🗑 CLEAR ACTIVITY LOGS", style = MaterialTheme.typography.labelSmall)
                 }
 
                 Spacer(modifier = Modifier.height(32.dp))
+            }
+        }
+    }
+}
+
+// ── Insight Card Composable ───────────────────────────────────────────────────
+@Composable
+private fun InsightCard(insight: InsightEntity) {
+
+    val (icon, accentColor) = when (insight.insightType) {
+        "peak_hour"        -> Pair("⏰", Color(0xFFFBBF24))
+        "top_app"          -> Pair("📱", Color(0xFFF87171))
+        "focus_violation"  -> Pair("🚫", Color(0xFFF87171))
+        "daily_trend"      -> Pair("📈", Color(0xFF818CF8))
+        "token_efficiency" -> Pair("🎯", Color(0xFF6EE7B7))
+        "streak"           -> Pair("🔥", Color(0xFF6EE7B7))
+        else               -> Pair("💡", Color(0xFF818CF8))
+    }
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = accentColor.copy(alpha = 0.15f),
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Text(icon, fontSize = 18.sp)
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = insight.insightType.replace("_", " ").uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = accentColor,
+                    fontSize = 9.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = insight.insightText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    lineHeight = 18.sp
+                )
             }
         }
     }
